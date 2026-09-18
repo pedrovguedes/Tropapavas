@@ -337,7 +337,13 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
 /* =========================================================
    CONFIGURAÇÃO
    ========================================================= */
-const PLANILHA_URL = '';           // URL /exec do Google Apps Script (recebe leads e cliques)
+const PLANILHA_URL = 'https://script.google.com/macros/s/AKfycbw7NQJfx2sIWXJvOJn7Vk6MUdFo7nGgLef2izLWcMdAB2sb1IoKOMSoPP2G_qGplvwU6g/exec';           // URL /exec do Google Apps Script (recebe contatos e cliques)
+const WEBHOOK_URL = '';            // opcional: webhook do Botconversa/Zapier (recebe os mesmos dados)
+/* Reserva sem planilha: WhatsApp da campanha, só dígitos, com 55 e DDD.
+   Ex.: '5511999999999'. Se PLANILHA_URL e WEBHOOK_URL estiverem vazios e este
+   número estiver preenchido, a janela manda a pessoa ao WhatsApp da campanha
+   com a mensagem pronta — o contato entra direto na agenda de vocês. */
+const WHATSAPP_CONTATO = '';
 const EVENTO = new Date('2026-09-19T14:30:00-03:00');
 const EVENTO_FIM = new Date('2026-09-19T17:30:00-03:00');
 const JANELA_SEGUNDOS = 15;
@@ -421,18 +427,42 @@ function linkDoGrupo(cidade){
   return link;
 }
 
+/* Fila de segurança: se o envio falhar (ou a planilha ainda não estiver
+   configurada), o dado fica guardado no aparelho e é reenviado depois. */
+function fila(){ try{ return JSON.parse(ler('tropa_fila') || '[]') }catch(e){ return [] } }
+function guardarNaFila(dados){
+  const f = fila(); f.push(dados);
+  guardar('tropa_fila', JSON.stringify(f.slice(-50)));
+}
+function enviar(dados){
+  const destinos = [PLANILHA_URL, WEBHOOK_URL].filter(u => u && /^https/.test(u));
+  if(!destinos.length){ guardarNaFila(dados); return false; }
+  const corpo = JSON.stringify(dados);
+  let ok = false;
+  destinos.forEach(url => {
+    try{
+      if(navigator.sendBeacon && navigator.sendBeacon(url, new Blob([corpo], {type:'text/plain;charset=UTF-8'}))) ok = true;
+      else { fetch(url, {method:'POST', body:corpo, mode:'no-cors', keepalive:true}).catch(()=>{}); ok = true; }
+    }catch(e){}
+  });
+  if(!ok) guardarNaFila(dados);
+  return ok;
+}
+function esvaziarFila(){
+  const f = fila(); if(!f.length) return;
+  if(![PLANILHA_URL, WEBHOOK_URL].some(u => u && /^https/.test(u))) return;
+  guardar('tropa_fila', '[]');
+  f.forEach(d => enviar(Object.assign({reenvio:true}, d)));
+}
+window.addEventListener('load', esvaziarFila);
+
 function registrar(dados){
   // Google Tag Manager: eventos 'lead' e 'entrar_grupo' para usar como gatilho
   try{ window.dataLayer = window.dataLayer || []; dataLayer.push({event: dados.tipo === 'lead' ? 'lead' : 'entrar_grupo', grupo: dados.grupo || '', municipio: dados.municipio || '', regiao: dados.regiao || '', botao: dados.botao || ''}); }catch(e){}
   // pixels de anúncio (só disparam se estiverem instalados na página)
   try{ if(window.fbq) fbq('track', dados.tipo === 'lead' ? 'Lead' : 'Contact', {content_name: dados.municipio}); }catch(e){}
   try{ if(window.gtag) gtag('event', dados.tipo === 'lead' ? 'generate_lead' : 'join_group', {municipio: dados.municipio}); }catch(e){}
-  if(!PLANILHA_URL) return;
-  const corpo = JSON.stringify(Object.assign({origem: location.search || document.referrer || 'direto', quando: new Date().toISOString()}, dados));
-  try{
-    if(navigator.sendBeacon) navigator.sendBeacon(PLANILHA_URL, new Blob([corpo], {type:'text/plain;charset=UTF-8'}));
-    else fetch(PLANILHA_URL, {method:'POST', body:corpo, mode:'no-cors', keepalive:true});
-  }catch(e){}
+  enviar(Object.assign({origem: location.search || document.referrer || 'direto', quando: new Date().toISOString()}, dados));
 }
 
 /* Abre o WhatsApp na MESMA aba: navegadores do Instagram/Facebook
@@ -688,6 +718,14 @@ $('lFone').addEventListener('input', e => {
                  : d.length > 2 ? '(' + d.slice(0,2) + ') ' + d.slice(2) : d;
 });
 
+/* true quando não há planilha nem webhook, mas há WhatsApp da campanha */
+const reservaWhats = () => !/^https/.test(PLANILHA_URL) && !/^https/.test(WEBHOOK_URL) && /^\d{12,13}$/.test(WHATSAPP_CONTATO);
+
+if(reservaWhats()){
+  $('lEnviar').textContent = 'Quero ser chamado no WhatsApp';
+  document.querySelector('.janela p.dica').textContent = 'Preencha e toque no botão: abre o WhatsApp da campanha com a mensagem pronta. A gente te manda o ponto de encontro do adesivaço.';
+}
+
 $('lEnviar').addEventListener('click', () => {
   const nome = $('lNome').value.trim();
   const fone = $('lFone').value.replace(/\D/g,'');
@@ -700,6 +738,10 @@ $('lEnviar').addEventListener('click', () => {
   erro.textContent = '';
   registrar({tipo:'lead', nome, whatsapp:'55'+fone, municipio:cidade, regiao:regiaoDe[cidade] || grupoPadrao, consentimento:true});
   fecharJanela();
+  if(reservaWhats()){
+    const texto = encodeURIComponent('Olá! Sou ' + nome + ', de ' + cidade + '. Quero fazer parte da Tropa da Direita e receber o ponto de encontro do adesivaço.');
+    return location.href = 'https://wa.me/' + WHATSAPP_CONTATO + '?text=' + texto;
+  }
   irParaGrupo(cidade, 'janela');
 });
 
