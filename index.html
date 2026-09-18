@@ -320,7 +320,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
     <button class="fechar" id="fecharJanela" type="button" aria-label="Fechar">×</button>
     <h3 id="janelaTitulo">Quer que a gente te chame?</h3>
     <p class="dica">Deixe seu WhatsApp e mandamos o ponto de encontro do adesivaço de sábado. Em seguida, você entra no grupo da Tropa da sua cidade e depois nos grupos do Nikolas e do Flávio.</p>
-    <div class="campo"><input id="lNome" type="text" placeholder="Seu nome" autocomplete="given-name" aria-label="Seu nome"></div>
+    <div class="campo"><input id="lNome" type="text" placeholder="Seu primeiro nome" autocomplete="given-name" aria-label="Seu primeiro nome"></div>
     <div class="campo"><input id="lFone" type="tel" inputmode="numeric" placeholder="WhatsApp com DDD" autocomplete="tel-national" aria-label="WhatsApp com DDD"></div>
     <div class="campo">
       <input id="lCidade" type="text" placeholder="Sua cidade" autocomplete="off" aria-label="Sua cidade" aria-controls="sug-lead">
@@ -468,6 +468,11 @@ function registrar(dados){
 /* Abre o WhatsApp na MESMA aba: navegadores do Instagram/Facebook
    costumam bloquear window.open, o que derrubava a conversão. */
 function irParaGrupo(cidade, origem){
+  if(precisaDados(origem)) return pedirDados(() => abrirGrupoAgora(cidade, origem));
+  abrirGrupoAgora(cidade, origem);
+}
+
+function abrirGrupoAgora(cidade, origem){
   const link = linkDoGrupo(cidade);
   guardar('tropa_cidade', cidade);
   guardar('tropa_entrou', '1');
@@ -541,6 +546,12 @@ function abrirPasso(id, origem){
     return setTimeout(() => inputCidade.focus(), 450);
   }
   const g = gruposExtras.find(x => x.id === id); if(!g) return;
+  if(precisaDados(origem)) return pedirDados(() => abrirExtraAgora(g, origem));
+  abrirExtraAgora(g, origem);
+}
+
+function abrirExtraAgora(g, origem){
+  const id = g.id;
   marcarFeito(id);
   registrar({tipo:'grupo', grupo:id, municipio:cidadeEscolhida || '', botao:origem});
   $('aviso').innerHTML = 'Abrindo o <b>' + g.nome + '</b>… Se não abrir, <a href="' + g.link + '">toque aqui</a>.';
@@ -692,17 +703,43 @@ try{
 
 /* ---------- janela de captura ---------- */
 const janela = $('janela');
-let janelaMostrada = ler('tropa_janela') === '1' || ler('tropa_entrou') === '1';
+let janelaMostrada = ler('tropa_janela') === '1';
 let leadCidade = cidadeEscolhida;
+let acaoPendente = null;   // o que fazer depois que a pessoa preencher (entrar no grupo)
 
-function abrirJanela(){
-  if(janelaMostrada) return;
-  janelaMostrada = true; guardar('tropa_janela','1');
+/* Já deixou os dados, ou já disse que não quer deixar: não pergunta de novo. */
+const leadFeito = () => ler('tropa_lead') === '1' || ler('tropa_pulou') === '1';
+/* Pede os dados antes de abrir o grupo, menos quando o clique veio da própria janela. */
+const precisaDados = origem => !leadFeito() && !/^janela/.test(origem || '');
+
+function prepararJanela(){
   if(cidadeEscolhida){ $('lCidade').value = cidadeEscolhida; leadCidade = cidadeEscolhida; }
+  // cidade já escolhida no site: some com o campo, sobra nome e WhatsApp
+  $('lCidade').closest('.campo').style.display = cidadeEscolhida ? 'none' : '';
+}
+
+/* Janela pedida por um clique em "entrar no grupo" */
+function pedirDados(acao){
+  acaoPendente = acao;
+  prepararJanela();
+  $('janelaTitulo').textContent = 'Falta só um passo';
+  document.querySelector('.janela p.dica').textContent = 'Deixe seu nome e WhatsApp para a gente te avisar do ponto de encontro. Em seguida você entra no grupo.';
+  if(!reservaWhats()) $('lEnviar').textContent = 'Entrar no grupo';
+  $('lPular').textContent = 'Entrar sem deixar contato';
   janela.classList.add('on');
   setTimeout(() => $('lNome').focus({preventScroll:true}), 300);
 }
-function fecharJanela(){ janela.classList.remove('on'); }
+
+/* Janela automática, para quem fica no site sem clicar em nada */
+function abrirJanela(){
+  if(janelaMostrada || leadFeito() || janela.classList.contains('on')) return;
+  janelaMostrada = true; guardar('tropa_janela','1');
+  acaoPendente = null;
+  prepararJanela();
+  janela.classList.add('on');
+  setTimeout(() => $('lNome').focus({preventScroll:true}), 300);
+}
+function fecharJanela(){ janela.classList.remove('on'); acaoPendente = null; }
 
 setTimeout(abrirJanela, JANELA_SEGUNDOS * 1000);
 document.addEventListener('mouseout', e => { if(!e.relatedTarget && e.clientY < 8) abrirJanela(); }); // saída no computador
@@ -737,17 +774,24 @@ $('lEnviar').addEventListener('click', () => {
   if(!$('lOk').checked) return erro.textContent = 'Marque a autorização para podermos te chamar.';
   erro.textContent = '';
   registrar({tipo:'lead', nome, whatsapp:'55'+fone, municipio:cidade, regiao:regiaoDe[cidade] || grupoPadrao, consentimento:true});
+  guardar('tropa_lead','1');
+  guardar('tropa_nome', nome);
+  const seguir = acaoPendente;
   fecharJanela();
   if(reservaWhats()){
     const texto = encodeURIComponent('Olá! Sou ' + nome + ', de ' + cidade + '. Quero fazer parte da Tropa da Direita e receber o ponto de encontro do adesivaço.');
     return location.href = 'https://wa.me/' + WHATSAPP_CONTATO + '?text=' + texto;
   }
+  if(seguir) return seguir();
   irParaGrupo(cidade, 'janela');
 });
 
 $('lPular').addEventListener('click', () => {
   const cidade = leadCidade || acharCidade($('lCidade').value) || cidadeEscolhida;
+  guardar('tropa_pulou','1');   // não pergunta de novo nos próximos grupos
+  const seguir = acaoPendente;
   fecharJanela();
+  if(seguir) return seguir();
   if(cidade) return irParaGrupo(cidade, 'janela-pular');
   $('formulario').scrollIntoView({behavior:'smooth', block:'center'});
   setTimeout(() => inputCidade.focus(), 450);
