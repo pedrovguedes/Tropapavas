@@ -355,7 +355,6 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
     <label class="consent"><input type="checkbox" id="lOk" checked> Autorizo receber mensagens da campanha de Lucas Pavanato no WhatsApp. Posso sair quando quiser.</label>
     <p class="erro" id="lErro"></p>
     <button class="btn" id="lEnviar" type="button">Quero ser chamado e entrar no grupo</button>
-    <button class="pular" id="lPular" type="button">Só quero entrar no grupo</button>
   </div>
 </div>
 
@@ -732,7 +731,8 @@ let leadCidade = cidadeEscolhida;
 let acaoPendente = null;   // o que fazer depois que a pessoa preencher (entrar no grupo)
 
 /* Já deixou os dados, ou já disse que não quer deixar: não pergunta de novo. */
-const leadFeito = () => ler('tropa_lead') === '1' || ler('tropa_pulou') === '1';
+const leadFeito = () => ler('tropa_lead') === '1';
+try{ localStorage.removeItem('tropa_pulou'); localStorage.removeItem('tropa_janela'); }catch(e){}
 /* Pede os dados antes de abrir o grupo, menos quando o clique veio da própria janela. */
 const precisaDados = origem => !leadFeito() && !/^janela/.test(origem || '');
 
@@ -749,7 +749,6 @@ function pedirDados(acao){
   $('janelaTitulo').textContent = 'Falta só um passo';
   document.querySelector('.janela p.dica').textContent = 'Deixe seu nome e WhatsApp para a gente te avisar do ponto de encontro. Em seguida você entra no grupo.';
   if(!reservaWhats()) $('lEnviar').textContent = 'Entrar no grupo';
-  $('lPular').textContent = 'Entrar sem deixar contato';
   janela.classList.add('on');
   setTimeout(() => $('lNome').focus({preventScroll:true}), 300);
 }
@@ -799,16 +798,6 @@ $('lEnviar').addEventListener('click', () => {
   irParaGrupo(cidade, 'janela');
 });
 
-$('lPular').addEventListener('click', () => {
-  const cidade = leadCidade || acharCidade($('lCidade').value) || cidadeEscolhida;
-  guardar('tropa_pulou','1');   // não pergunta de novo nos próximos grupos
-  const seguir = acaoPendente;
-  fecharJanela();
-  if(seguir) return seguir();
-  if(cidade) return irParaGrupo(cidade, 'janela-pular');
-  $('formulario').scrollIntoView({behavior:'smooth', block:'center'});
-  setTimeout(() => inputCidade.focus(), 450);
-});
 </script>
 </body>
 </html>
