@@ -156,6 +156,11 @@ a{color:inherit}
 .janela p.dica{font-size:15px;color:var(--cinza);margin:8px 0 14px;line-height:1.45}
 .janela .campo{margin-bottom:10px}
 .janela .campo input{padding-left:16px}
+.etapas{display:flex;gap:6px;margin:14px 0 18px}
+.etapas i{flex:1;height:5px;border-radius:5px;background:#E3EAE0;transition:background .2s}
+.etapas i.on{background:var(--verde-3)}
+.rotulo{display:block;font-size:13px;font-weight:700;color:var(--cinza);margin-bottom:6px}
+.etapa .campo{margin-bottom:14px}
 .consent{display:flex;gap:10px;align-items:flex-start;font-size:13px;line-height:1.45;color:var(--cinza);margin:6px 0 2px}
 .consent input{width:20px;height:20px;flex:none;margin-top:1px;accent-color:var(--verde-3)}
 .erro{color:#B42318;font-size:13px;margin-top:6px;min-height:1em}
@@ -344,17 +349,30 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
 <div class="janela" id="janela" role="dialog" aria-modal="true" aria-labelledby="janelaTitulo">
   <div class="janela-box">
     <button class="fechar" id="fecharJanela" type="button" aria-label="Fechar">×</button>
-    <h3 id="janelaTitulo">Quer que a gente te chame?</h3>
-    <p class="dica">Deixe seu WhatsApp e mandamos o ponto de encontro do adesivaço de sábado. Em seguida, você entra no grupo da Tropa da sua cidade e depois nos grupos do Nikolas e do Flávio.</p>
-    <div class="campo"><input id="lNome" type="text" placeholder="Seu primeiro nome" autocomplete="given-name" aria-label="Seu primeiro nome"></div>
-    <div class="campo"><input id="lFone" type="tel" inputmode="numeric" placeholder="WhatsApp com DDD" autocomplete="tel-national" aria-label="WhatsApp com DDD"></div>
-    <div class="campo">
-      <input id="lCidade" type="text" placeholder="Sua cidade" autocomplete="off" aria-label="Sua cidade" aria-controls="sug-lead">
-      <ul class="sugestoes" id="sug-lead" role="listbox"></ul>
+    <h3 id="janelaTitulo">Preencha e entre no grupo</h3>
+    <p class="dica">Leva 15 segundos. Depois você já entra no grupo oficial da sua cidade.</p>
+    <div class="etapas" aria-hidden="true"><i id="eta1" class="on"></i><i id="eta2"></i></div>
+
+    <div class="etapa" id="etapa1">
+      <label class="rotulo" for="lNome">Nome</label>
+      <div class="campo"><input id="lNome" type="text" placeholder="Seu primeiro nome" autocomplete="given-name"></div>
+      <label class="rotulo" for="lFone">WhatsApp</label>
+      <div class="campo"><input id="lFone" type="tel" inputmode="numeric" placeholder="(11) 99999-9999" autocomplete="tel-national"></div>
+      <label class="consent"><input type="checkbox" id="lOk" checked> Autorizo a campanha de Lucas Pavanato a me enviar avisos e convites por WhatsApp. Posso sair quando quiser.</label>
+      <p class="erro" id="lErro1"></p>
+      <button class="btn" id="lContinuar" type="button">Continuar</button>
     </div>
-    <label class="consent"><input type="checkbox" id="lOk" checked> Autorizo receber mensagens da campanha de Lucas Pavanato no WhatsApp. Posso sair quando quiser.</label>
-    <p class="erro" id="lErro"></p>
-    <button class="btn" id="lEnviar" type="button">Quero ser chamado e entrar no grupo</button>
+
+    <div class="etapa" id="etapa2" hidden>
+      <label class="rotulo" for="lCidade">Sua cidade</label>
+      <div class="campo">
+        <input id="lCidade" type="text" placeholder="Ex.: Campinas" autocomplete="off" aria-controls="sug-lead">
+        <ul class="sugestoes" id="sug-lead" role="listbox"></ul>
+      </div>
+      <p class="erro" id="lErro2"></p>
+      <button class="btn" id="lEnviar" type="button">Entrar no grupo</button>
+      <button class="pular" id="lVoltar" type="button">Voltar</button>
+    </div>
   </div>
 </div>
 
@@ -537,7 +555,7 @@ function autocompletar(input, lista, aoEscolher){
     input.value = it.nome; fechar(); aoEscolher(it.nome);
   };
   input.addEventListener('input', () => { aoEscolher(acharCidade(input.value), true); render(); });
-  input.addEventListener('focus', render);
+  input.addEventListener('focus', () => { if(!acharCidade(input.value)) render(); });
   input.addEventListener('blur', () => setTimeout(fechar, 120));
   input.addEventListener('keydown', e => {
     const bts = lista.querySelectorAll('button');
@@ -736,21 +754,27 @@ try{ localStorage.removeItem('tropa_pulou'); localStorage.removeItem('tropa_jane
 /* Pede os dados antes de abrir o grupo, menos quando o clique veio da própria janela. */
 const precisaDados = origem => !leadFeito() && !/^janela/.test(origem || '');
 
+/* A janela tem 2 etapas: 1) nome e WhatsApp  2) cidade */
+function irEtapa(n){
+  $('etapa1').hidden = n !== 1;
+  $('etapa2').hidden = n !== 2;
+  $('eta1').classList.toggle('on', true);
+  $('eta2').classList.toggle('on', n === 2);
+  const foco = n === 1 ? $('lNome') : ($('lCidade').value.trim() ? null : $('lCidade'));
+  if(foco) setTimeout(() => foco.focus({preventScroll:true}), 250);
+}
+
 function prepararJanela(){
   if(cidadeEscolhida){ $('lCidade').value = cidadeEscolhida; leadCidade = cidadeEscolhida; }
-  // cidade já escolhida no site: some com o campo, sobra nome e WhatsApp
-  $('lCidade').closest('.campo').style.display = cidadeEscolhida ? 'none' : '';
+  $('lErro1').textContent = ''; $('lErro2').textContent = '';
+  irEtapa(1);
 }
 
 /* Janela pedida por um clique em "entrar no grupo" */
 function pedirDados(acao){
   acaoPendente = acao;
   prepararJanela();
-  $('janelaTitulo').textContent = 'Falta só um passo';
-  document.querySelector('.janela p.dica').textContent = 'Deixe seu nome e WhatsApp para a gente te avisar do ponto de encontro. Em seguida você entra no grupo.';
-  if(!reservaWhats()) $('lEnviar').textContent = 'Entrar no grupo';
   janela.classList.add('on');
-  setTimeout(() => $('lNome').focus({preventScroll:true}), 300);
 }
 
 function fecharJanela(){ janela.classList.remove('on'); acaoPendente = null; }
@@ -770,20 +794,30 @@ $('lFone').addEventListener('input', e => {
 /* true quando não há planilha nem webhook, mas há WhatsApp da campanha */
 const reservaWhats = () => !/^https/.test(PLANILHA_URL) && !/^https/.test(WEBHOOK_URL) && /^\d{12,13}$/.test(WHATSAPP_CONTATO);
 
-if(reservaWhats()){
-  $('lEnviar').textContent = 'Quero ser chamado no WhatsApp';
-  document.querySelector('.janela p.dica').textContent = 'Preencha e toque no botão: abre o WhatsApp da campanha com a mensagem pronta. A gente te manda o ponto de encontro do adesivaço.';
-}
+if(reservaWhats()) $('lEnviar').textContent = 'Falar no WhatsApp da campanha';
+
+/* Etapa 1 → Etapa 2 */
+$('lContinuar').addEventListener('click', () => {
+  const nome = $('lNome').value.trim();
+  const fone = $('lFone').value.replace(/\D/g,'');
+  const erro = $('lErro1');
+  if(nome.length < 2) return erro.textContent = 'Digite seu nome.';
+  if(fone.length < 10) return erro.textContent = 'Digite o WhatsApp com DDD.';
+  if(!$('lOk').checked) return erro.textContent = 'Marque a autorização para podermos te avisar.';
+  erro.textContent = '';
+  irEtapa(2);
+});
+$('lNome').addEventListener('keydown', e => { if(e.key === 'Enter') $('lFone').focus(); });
+$('lFone').addEventListener('keydown', e => { if(e.key === 'Enter') $('lContinuar').click(); });
+$('lVoltar').addEventListener('click', () => irEtapa(1));
 
 $('lEnviar').addEventListener('click', () => {
   const nome = $('lNome').value.trim();
   const fone = $('lFone').value.replace(/\D/g,'');
   const cidade = leadCidade || acharCidade($('lCidade').value);
-  const erro = $('lErro');
-  if(nome.length < 2) return erro.textContent = 'Digite seu nome.';
-  if(fone.length < 10) return erro.textContent = 'Digite o WhatsApp com DDD.';
-  if(!cidade) return erro.textContent = 'Escolha sua cidade na lista.';
-  if(!$('lOk').checked) return erro.textContent = 'Marque a autorização para podermos te chamar.';
+  const erro = $('lErro2');
+  if(nome.length < 2 || fone.length < 10) return irEtapa(1);
+  if(!cidade) return erro.textContent = 'Digite sua cidade e toque no nome na lista.';
   erro.textContent = '';
   registrar({tipo:'lead', nome, whatsapp:'55'+fone, municipio:cidade, regiao:regiaoDe[cidade] || grupoPadrao, consentimento:true});
   guardar('tropa_lead','1');
